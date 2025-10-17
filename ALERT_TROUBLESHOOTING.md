@@ -1,5 +1,36 @@
 # Alert Notification Troubleshooting
 
+## Resolution Status
+
+**Status:** ✅ RESOLVED
+
+**Date:** October 16, 2025
+
+**Root Causes Identified:**
+1. **Mute Actions Duration** - Set to `PT5M` (5 minutes), which suppressed email notifications after the initial alert, resulting in only one email per outage regardless of duration
+2. **Auto Mitigate Disabled** - Set to `false`, preventing the alert from automatically resolving when connectivity was restored
+
+**Changes Applied:**
+- Updated `muteActionsDuration` from `PT5M` to `PT0M` in main.bicep (line 164)
+  - **Impact:** Email notifications now sent every 5 minutes during outages instead of just once
+- Enabled `autoMitigate: true` in main.bicep (line 165)
+  - **Impact:** Alert automatically resolves and sends resolution email when heartbeat resumes
+- Enhanced deployment script (deploy.sh) with post-deployment verification
+  - Validates alert configuration matches expected values
+  - Displays action group configuration for user verification
+- Updated README.md with comprehensive alert testing procedures and email troubleshooting guidance
+
+**Verification:**
+Run `./deploy.sh` to apply the fix. After deployment, test the alert system using the procedure documented in the "Testing Alerts" section of README.md.
+
+**Expected Behavior After Fix:**
+- Alert fires within 6-7 minutes of heartbeat stopping
+- Email notifications sent every 5 minutes while outage persists
+- Alert automatically resolves within 6-7 minutes of heartbeat resuming
+- Resolution email sent when alert clears
+
+---
+
 ## Issue Summary
 
 **Problem:** Azure Monitor alert rule is configured and enabled, but email notifications are not being received when the heartbeat stops for more than 5 minutes.

@@ -269,6 +269,152 @@ az monitor scheduled-query list \
 2. Wait 6 minutes
 3. Check your email for an alert from Azure Monitor
 
+## Alert Configuration
+
+The alert system is configured to provide continuous monitoring and timely notifications:
+
+### How Alerts Work
+
+- **Evaluation Frequency**: The alert rule checks for missing pings every 5 minutes
+- **Detection Window**: Looks for at least 1 ping in the last 5 minutes
+- **Notification Timing**: 
+  - First email sent immediately when connectivity is lost (after 5-minute evaluation)
+  - Additional emails sent every 5 minutes while the outage persists
+  - Resolution email sent automatically when connectivity is restored
+- **Auto-Resolution**: When your device reconnects and pings resume, the alert automatically resolves within one evaluation cycle (5 minutes)
+
+### Example Timeline
+
+```
+02:10 - Internet connection lost
+02:15 - Alert evaluates, detects missing pings → Email #1 sent ✉️
+02:20 - Alert still firing → Email #2 sent ✉️
+02:25 - Alert still firing → Email #3 sent ✉️
+02:30 - Internet connection restored, pings resume
+02:35 - Alert evaluates, detects pings → Resolution email sent ✉️
+```
+
+This configuration ensures you're continuously aware of ongoing outages and receive clear confirmation when connectivity is restored.
+
+## Testing Alerts
+
+To verify the alert system is working correctly after deployment:
+
+### Manual Alert Test
+
+1. **Stop the heartbeat agent:**
+   ```bash
+   ./stop_heartbeat.sh
+   ```
+
+2. **Wait 6-7 minutes** for the alert to fire
+   - The alert evaluates every 5 minutes
+   - Allow extra time for evaluation and email delivery
+
+3. **Check your email** (including spam folder) for an alert notification from Azure Monitor
+   - Subject will include "Fired: Sev 2 Azure Monitor Alert"
+   - Sender: `azure-noreply@microsoft.com`
+
+4. **Verify alert fired** (optional):
+   ```bash
+   az monitor app-insights query \
+     --app darylhome-appi \
+     --resource-group $RG \
+     --analytics-query "requests | where name == 'Ping' | where timestamp > ago(15m) | summarize count()"
+   ```
+   If count is 0, the alert should have fired.
+
+5. **Resume the heartbeat agent:**
+   ```bash
+   ./start_heartbeat.sh
+   ```
+
+6. **Wait 6-7 minutes** for the resolution email
+   - Subject will include "Resolved: Sev 2 Azure Monitor Alert"
+   - Confirms the alert system detected connectivity restoration
+
+### Expected Behavior
+
+- ✅ Alert fires within 7 minutes of stopping the agent
+- ✅ Multiple emails received during extended outages (every 5 minutes)
+- ✅ Resolution email received within 7 minutes of restarting the agent
+- ✅ No manual intervention required to clear alerts
+
+## Email Delivery Troubleshooting
+
+If you're not receiving alert emails, check these common issues:
+
+### Check Spam/Junk Folders
+
+Azure Monitor emails may be filtered by email providers:
+
+1. **Check spam folder** for emails from `azure-noreply@microsoft.com`
+2. **Check Gmail tabs** (Promotions, Updates, Social) if using Gmail
+3. **Search your inbox** for "Azure Monitor Alert" or "Fired: Sev"
+
+### Verify Action Group Email
+
+Confirm your email address is correctly configured:
+
+```bash
+az monitor action-group show \
+  --name darylhome-ag \
+  --resource-group $RG \
+  --query "{enabled:enabled, email:emailReceivers[0].emailAddress, status:emailReceivers[0].status}" \
+  --output table
+```
+
+**Expected output:**
+- `enabled`: true
+- `email`: Your email address
+- `status`: Enabled
+
+### Email Confirmation Requirement
+
+When you first deploy the action group, Azure sends a confirmation email:
+
+1. **Check your inbox** for "Azure: Activate this action group" email
+2. **Click the confirmation link** in the email
+3. **Verify status** shows "Enabled" (not "NotSpecified") using the command above
+4. **Re-deploy if needed**: If you missed the confirmation, update `.env` and run `./deploy.sh` again
+
+### Add Azure to Safe Senders
+
+To prevent future filtering:
+
+**Gmail:**
+1. Open an Azure email
+2. Click the three dots menu → "Filter messages like this"
+3. Create filter with From: `azure-noreply@microsoft.com`
+4. Check "Never send it to Spam"
+
+**Outlook/Hotmail:**
+1. Settings → Mail → Junk email
+2. Add `azure-noreply@microsoft.com` to Safe senders
+
+**Apple Mail:**
+1. Open an Azure email
+2. Right-click sender → "Add to Contacts"
+
+### Verify Alert Configuration
+
+Check that alert settings are correct:
+
+```bash
+az monitor scheduled-query show \
+  --name darylhome-heartbeat-miss \
+  --resource-group $RG \
+  --query "{muteActions:muteActionsDuration, autoMitigate:autoMitigate, enabled:enabled}" \
+  --output table
+```
+
+**Expected values:**
+- `muteActions`: PT0M (zero minutes - enables continuous notifications)
+- `autoMitigate`: true (enables automatic resolution)
+- `enabled`: true
+
+If values don't match, re-run `./deploy.sh` to apply the correct configuration.
+
 ## Troubleshooting
 
 ### Function returns 503 "Function host is not running"
