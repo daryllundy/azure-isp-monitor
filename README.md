@@ -30,6 +30,33 @@ A simple ISP/internet connectivity monitoring system using Azure Functions and A
 - ✅ **Infrastructure as Code** - Everything deployed via Bicep templates
 - ✅ **Easy Management** - Simple start/stop scripts with status monitoring
 
+## Requirements
+
+- **Python 3.8 or higher** (Python 3.11+ recommended)
+- **macOS/Linux** (tested on macOS, should work on Linux)
+- **tmux** - For persistent background monitoring (install via `brew install tmux` on macOS)
+- **Azure CLI** - For deployment
+
+### Python Setup (macOS)
+
+The heartbeat agent requires Python 3 with SSL support. If you're using Python installed from python.org on macOS, you must install SSL certificates:
+
+```bash
+# Check Python version
+python3 --version  # Should be 3.8 or higher
+
+# Install SSL certificates (required for HTTPS connections)
+# Replace "3.12" with your Python version
+/Applications/Python\ 3.12/Install\ Certificates.command
+
+# Or find the correct path
+ls -d /Applications/Python\ 3.*/Install\ Certificates.command
+```
+
+**Common Issues:**
+- `[SSL: CERTIFICATE_VERIFY_FAILED]` error - Run the Install Certificates command above
+- `python3: command not found` - Install Python 3 from [python.org](https://www.python.org/downloads/) or via Homebrew
+
 ## Quick Start
 
 ### 1. Deploy Infrastructure
@@ -252,6 +279,12 @@ az monitor scheduled-query list \
 - Check firewall isn't blocking outbound HTTPS
 - Verify internet connectivity on agent machine
 - Check .env file has correct HEARTBEAT_URL
+
+### SSL Certificate errors
+- **Error**: `[SSL: CERTIFICATE_VERIFY_FAILED] certificate verify failed`
+- **Solution**: Install Python SSL certificates (see [Python Setup](#python-setup-macos) section above)
+- **macOS**: Run `/Applications/Python 3.XX/Install Certificates.command` (replace XX with your version)
+- **Alternative**: Use Python from Homebrew which includes certificates: `brew install python3`
 
 ### Agent script issues
 - Verify tmux is installed: `which tmux` or `brew install tmux` (macOS)
