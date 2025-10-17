@@ -161,8 +161,12 @@ resource rule 'Microsoft.Insights/scheduledQueryRules@2023-12-01' = {
         ag.id
       ]
     }
-    muteActionsDuration: 'PT5M'
-    autoMitigate: false
+    // Set to PT0M (zero minutes) to allow notifications every evaluation cycle (5 min)
+    // This ensures users receive continuous alerts during extended outages
+    muteActionsDuration: 'PT0M'
+    // Enable auto-mitigation so the alert automatically resolves when pings resume
+    // This provides clear confirmation that connectivity has been restored
+    autoMitigate: true
   }
 }
 
