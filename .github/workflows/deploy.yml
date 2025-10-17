@@ -1,0 +1,115 @@
+name: Deploy Azure ISP Monitor
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+env:
+  AZURE_FUNCTIONAPP_NAME: darylhome-func
+  AZURE_FUNCTIONAPP_PACKAGE_PATH: '.'
+  PYTHON_VERSION: '3.11'
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment: production
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Setup Python ${{ env.PYTHON_VERSION }}
+      uses: actions/setup-python@v5
+      with:
+        python-version: ${{ env.PYTHON_VERSION }}
+
+    - name: Create deployment package
+      run: |
+        zip -r function.zip Ping host.json requirements.txt
+        echo "Package created: $(du -h function.zip | cut -f1)"
+
+    - name: Azure Login
+      uses: azure/login@v1
+      with:
+        creds: ${{ secrets.AZURE_CREDENTIALS }}
+
+    - name: Upload package to blob storage
+      run: |
+        STORAGE_ACCOUNT=$(az storage account list \
+          --resource-group ${{ secrets.AZURE_RG }} \
+          --query "[?starts_with(name, 'darylhomesa')].name | [0]" \
+          --output tsv)
+
+        ACCOUNT_KEY=$(az storage account keys list \
+          --resource-group ${{ secrets.AZURE_RG }} \
+          --account-name "$STORAGE_ACCOUNT" \
+          --query "[0].value" \
+          --output tsv)
+
+        CONTAINER_NAME="function-releases"
+        BLOB_NAME="function-$(date -u +%Y%m%d%H%M%S).zip"
+
+        az storage container create \
+          --name "$CONTAINER_NAME" \
+          --account-name "$STORAGE_ACCOUNT" \
+          --account-key "$ACCOUNT_KEY" \
+          --output none 2>/dev/null || true
+
+        az storage blob upload \
+          --account-name "$STORAGE_ACCOUNT" \
+          --account-key "$ACCOUNT_KEY" \
+          --container-name "$CONTAINER_NAME" \
+          --name "$BLOB_NAME" \
+          --file function.zip \
+          --overwrite \
+          --output none
+
+        EXPIRY=$(date -u -d '+7 days' '+%Y-%m-%dT%H:%MZ')
+        SAS_TOKEN=$(az storage blob generate-sas \
+          --account-name "$STORAGE_ACCOUNT" \
+          --account-key "$ACCOUNT_KEY" \
+          --container-name "$CONTAINER_NAME" \
+          --name "$BLOB_NAME" \
+          --permissions r \
+          --expiry "$EXPIRY" \
+          --https-only \
+          --output tsv)
+
+        PACKAGE_URL="https://${STORAGE_ACCOUNT}.blob.core.windows.net/${CONTAINER_NAME}/${BLOB_NAME}?${SAS_TOKEN}"
+        echo "PACKAGE_URL=$PACKAGE_URL" >> $GITHUB_ENV
+
+    - name: Deploy to Azure Function App
+      run: |
+        az functionapp config appsettings set \
+          --resource-group ${{ secrets.AZURE_RG }} \
+          --name ${{ env.AZURE_FUNCTIONAPP_NAME }} \
+          --settings WEBSITE_RUN_FROM_PACKAGE="$PACKAGE_URL" \
+          --output none
+
+    - name: Restart Function App
+      run: |
+        az functionapp restart \
+          --resource-group ${{ secrets.AZURE_RG }} \
+          --name ${{ env.AZURE_FUNCTIONAPP_NAME }} \
+          --output none
+
+    - name: Wait for function to start
+      run: sleep 30
+
+    - name: Test function endpoint
+      run: |
+        HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" \
+          https://${{ env.AZURE_FUNCTIONAPP_NAME }}.azurewebsites.net/api/ping || echo "000")
+
+        if [ "$HTTP_CODE" = "200" ] || [ "$HTTP_CODE" = "204" ]; then
+          echo "✓ Function is responding (HTTP $HTTP_CODE)"
+        else
+          echo "⚠ Function returned HTTP $HTTP_CODE"
+          exit 1
+        fi
+
+    - name: Cleanup
+      if: always()
+      run: rm -f function.zip

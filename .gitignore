@@ -101,3 +101,6 @@ dmypy.json
 SECURITY.md
 .kiro/
 test_*.sh
+AGENTS.md
+DEPLOYMENT_STATUS.md
+TROUBLESHOOTING_SUMMARY.md

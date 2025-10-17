@@ -69,6 +69,7 @@ resource func 'Microsoft.Web/sites@2023-12-01' = {
         { name: 'AzureWebJobsStorage__tableServiceUri', value: 'https://${sa.name}.table.${environment().suffixes.storage}' }
         { name: 'APPINSIGHTS_INSTRUMENTATIONKEY', value: appi.properties.InstrumentationKey }
         { name: 'APPLICATIONINSIGHTS_CONNECTION_STRING', value: appi.properties.ConnectionString }
+        // Enable build during zip deployment (required for Linux Consumption)
         { name: 'SCM_DO_BUILD_DURING_DEPLOYMENT', value: 'true' }
         { name: 'ENABLE_ORYX_BUILD', value: 'true' }
       ]

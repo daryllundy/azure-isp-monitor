@@ -122,10 +122,15 @@ echo ""
 echo "[3/3] Deploying function app code..."
 echo "Building and deploying to $FUNC_APP_NAME..."
 
+if ! command -v zip >/dev/null 2>&1; then
+  echo "Error: zip command not found. Install zip and try again."
+  exit 1
+fi
+
 # Create deployment package
 echo "Creating deployment package..."
 rm -f function.zip
-zip -r function.zip Ping host.json requirements.txt
+zip -rq function.zip Ping host.json requirements.txt
 
 if [ ! -f function.zip ]; then
   echo "Error: Failed to create deployment package."
@@ -134,48 +139,80 @@ fi
 
 echo "Package size: $(du -h function.zip | cut -f1)"
 
-echo "Waiting for function app SCM to be ready..."
-sleep 30
-
-# Deploy function code using OneDeploy API
-# Get publishing credentials
-CREDS=$(az functionapp deployment list-publishing-credentials \
+# For Linux Consumption plans, we need to upload to blob storage and set WEBSITE_RUN_FROM_PACKAGE to the URL
+# This is different from setting it to "1"
+STORAGE_ACCOUNT=$(az storage account list \
   --resource-group "$RG" \
-  --name "$FUNC_APP_NAME" \
-  --query "{username:publishingUserName, password:publishingPassword}" \
-  --output json)
+  --query "[?starts_with(name, '${PREFIX}sa')].name | [0]" \
+  --output tsv)
 
-USERNAME=$(echo "$CREDS" | jq -r '.username')
-PASSWORD=$(echo "$CREDS" | jq -r '.password')
-
-# Deploy using ZipDeploy API
-CURL_OUTPUT=$(mktemp)
-CURL_STDERR=$(mktemp)
-HTTP_STATUS=$(curl --verbose -X POST \
-  -u "$USERNAME:$PASSWORD" \
-  -H "Content-Type: application/octet-stream" \
-  --data-binary @function.zip \
-  -w "%{http_code}" \
-  -o "$CURL_OUTPUT" \
-  https://$FUNC_APP_NAME.scm.azurewebsites.net/api/zipdeploy 2> "$CURL_STDERR")
-
-if [ "$HTTP_STATUS" != "200" ] && [ "$HTTP_STATUS" != "202" ]; then
-  echo "Error: Function code deployment failed with HTTP status $HTTP_STATUS"
-  echo "--- Verbose curl output (stderr) ---"
-  cat "$CURL_STDERR"
-  echo "--- Response body (stdout) ---"
-  cat "$CURL_OUTPUT"
-  echo "------------------------------------"
-  rm -f "$CURL_OUTPUT" "$CURL_STDERR" function.zip
+if [ -z "$STORAGE_ACCOUNT" ]; then
+  echo "Error: Could not determine storage account."
+  rm -f function.zip
   exit 1
 fi
-rm -f "$CURL_OUTPUT" "$CURL_STDERR"
 
-# Clean up
+CONTAINER_NAME="function-releases"
+BLOB_NAME="function-$(date -u +%Y%m%d%H%M%S).zip"
+
+echo "Getting storage account key..."
+ACCOUNT_KEY=$(az storage account keys list \
+  --resource-group "$RG" \
+  --account-name "$STORAGE_ACCOUNT" \
+  --query "[0].value" \
+  --output tsv)
+
+# Ensure container exists
+az storage container create \
+  --name "$CONTAINER_NAME" \
+  --account-name "$STORAGE_ACCOUNT" \
+  --account-key "$ACCOUNT_KEY" \
+  --output none 2>/dev/null || true
+
+echo "Uploading package to blob storage..."
+az storage blob upload \
+  --account-name "$STORAGE_ACCOUNT" \
+  --account-key "$ACCOUNT_KEY" \
+  --container-name "$CONTAINER_NAME" \
+  --name "$BLOB_NAME" \
+  --file function.zip \
+  --overwrite \
+  --output none
+
+if [ $? -ne 0 ]; then
+  echo "Error: Failed to upload package."
+  rm -f function.zip
+  exit 1
+fi
+
+# Generate SAS token for the blob
+EXPIRY=$(date -u -v+7d '+%Y-%m-%dT%H:%MZ' 2>/dev/null || date -u -d '+7 days' '+%Y-%m-%dT%H:%MZ')
+SAS_TOKEN=$(az storage blob generate-sas \
+  --account-name "$STORAGE_ACCOUNT" \
+  --account-key "$ACCOUNT_KEY" \
+  --container-name "$CONTAINER_NAME" \
+  --name "$BLOB_NAME" \
+  --permissions r \
+  --expiry "$EXPIRY" \
+  --https-only \
+  --output tsv)
+
+PACKAGE_URL="https://${STORAGE_ACCOUNT}.blob.core.windows.net/${CONTAINER_NAME}/${BLOB_NAME}?${SAS_TOKEN}"
+
+echo "Setting package URL for deployment..."
+az functionapp config appsettings set \
+  --resource-group "$RG" \
+  --name "$FUNC_APP_NAME" \
+  --settings WEBSITE_RUN_FROM_PACKAGE="$PACKAGE_URL" \
+  --output none
+
 rm -f function.zip
 
-echo "Waiting for function host to start..."
-sleep 10
+echo "Restarting function app..."
+az functionapp restart --resource-group "$RG" --name "$FUNC_APP_NAME" --output none
+
+echo "Waiting for function to start..."
+sleep 30
 
 # Test if function is responding
 echo "Testing function endpoint..."
