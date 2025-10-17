@@ -1,0 +1,101 @@
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# C extensions
+*.so
+
+# Distribution / packaging
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# Virtual environments
+.venv/
+venv/
+ENV/
+env/
+
+# Azure Functions
+local.settings.json
+__blobstorage__/
+__queues__/
+__azurite_db*__.json
+.python_packages/
+.funcignore.local
+
+# Deployment packages
+*.zip
+function.zip
+deployment/
+
+# Environment variables
+.env
+.env.local
+.env.*.local
+*.env.backup
+
+# IDE / Editor
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# Logs
+*.log
+logs/
+*.log.*
+
+# tmux
+.tmux/
+
+# OS
+Thumbs.db
+.Spotlight-V100
+.Trashes
+
+# Azure CLI
+.azure/
+
+# History
+.history/
+
+# Claude Code
+.claude/
+
+# Python testing
+.pytest_cache/
+.coverage
+htmlcov/
+.tox/
+.hypothesis/
+
+# Jupyter Notebook
+.ipynb_checkpoints
+
+# mypy
+.mypy_cache/
+.dmypy.json
+dmypy.json
+
+# Temporary files
+*.tmp
+*.bak
+*.orig
+SECURITY.md
