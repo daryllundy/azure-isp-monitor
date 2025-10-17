@@ -89,14 +89,15 @@ if [ $? -eq 0 ]; then
   MUTE_DURATION=$(echo "$ALERT_CONFIG" | jq -r '.muteActions')
   AUTO_MITIGATE=$(echo "$ALERT_CONFIG" | jq -r '.autoMitigate')
 
-  if [ "$MUTE_DURATION" = "PT0M" ] && [ "$AUTO_MITIGATE" = "true" ]; then
+  if [ "$AUTO_MITIGATE" = "true" ]; then
     echo "✓ Alert configuration verified"
-    echo "  - Mute Actions Duration: $MUTE_DURATION (continuous notifications enabled)"
+    echo "  - Mute Actions Duration: $MUTE_DURATION (disabled when autoMitigate=true - continuous notifications enabled)"
     echo "  - Auto Mitigate: $AUTO_MITIGATE (automatic resolution enabled)"
   else
     echo "⚠ Alert configuration mismatch:"
-    echo "  - Mute Actions Duration: $MUTE_DURATION (expected: PT0M)"
+    echo "  - Mute Actions Duration: $MUTE_DURATION"
     echo "  - Auto Mitigate: $AUTO_MITIGATE (expected: true)"
+    echo "  - Note: When autoMitigate=true, muteActionsDuration is automatically disabled for continuous notifications"
   fi
 else
   echo "⚠ Could not verify alert configuration. Alert rule may still be deploying."
@@ -122,8 +123,9 @@ echo "[3/3] Deploying function app code..."
 echo "Building and deploying to $FUNC_APP_NAME..."
 
 # Create deployment package
+echo "Creating deployment package..."
 rm -f function.zip
-zip -r function.zip . -x ".git/*" ".venv/*" ".history/*" "*.pyc" "__pycache__/*" ".DS_Store" "*.sh" "main.bicep" ".env" "*.zip" ".env.example"
+zip -r function.zip Ping host.json requirements.txt
 
 if [ ! -f function.zip ]; then
   echo "Error: Failed to create deployment package."
@@ -131,6 +133,9 @@ if [ ! -f function.zip ]; then
 fi
 
 echo "Package size: $(du -h function.zip | cut -f1)"
+
+echo "Waiting for function app SCM to be ready..."
+sleep 30
 
 # Deploy function code using OneDeploy API
 # Get publishing credentials
@@ -143,21 +148,28 @@ CREDS=$(az functionapp deployment list-publishing-credentials \
 USERNAME=$(echo "$CREDS" | jq -r '.username')
 PASSWORD=$(echo "$CREDS" | jq -r '.password')
 
-# Deploy using OneDeploy API (newer recommended method)
-HTTP_STATUS=$(curl -X POST \
+# Deploy using ZipDeploy API
+CURL_OUTPUT=$(mktemp)
+CURL_STDERR=$(mktemp)
+HTTP_STATUS=$(curl --verbose -X POST \
   -u "$USERNAME:$PASSWORD" \
-  -H "Content-Type: application/zip" \
+  -H "Content-Type: application/octet-stream" \
   --data-binary @function.zip \
   -w "%{http_code}" \
-  -o /dev/null \
-  -s \
-  https://$FUNC_APP_NAME.scm.azurewebsites.net/api/publish?type=zip)
+  -o "$CURL_OUTPUT" \
+  https://$FUNC_APP_NAME.scm.azurewebsites.net/api/zipdeploy 2> "$CURL_STDERR")
 
 if [ "$HTTP_STATUS" != "200" ] && [ "$HTTP_STATUS" != "202" ]; then
   echo "Error: Function code deployment failed with HTTP status $HTTP_STATUS"
-  rm -f function.zip
+  echo "--- Verbose curl output (stderr) ---"
+  cat "$CURL_STDERR"
+  echo "--- Response body (stdout) ---"
+  cat "$CURL_OUTPUT"
+  echo "------------------------------------"
+  rm -f "$CURL_OUTPUT" "$CURL_STDERR" function.zip
   exit 1
 fi
+rm -f "$CURL_OUTPUT" "$CURL_STDERR"
 
 # Clean up
 rm -f function.zip

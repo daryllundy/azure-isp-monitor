@@ -100,3 +100,4 @@ dmypy.json
 *.orig
 SECURITY.md
 .kiro/
+test_*.sh
