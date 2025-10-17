@@ -145,12 +145,7 @@ resource rule 'Microsoft.Insights/scheduledQueryRules@2023-12-01' = {
     criteria: {
       allOf: [
         {
-          query: '''
-requests
-| where cloud_RoleName == "${appName}"
-| where name has "POST /api/ping" or name has "GET /api/ping"
-| where timestamp > ago(5m)
-| summarize count()'''
+          query: 'requests | where cloud_RoleName == "${appName}" | where name == "Ping" | where timestamp > ago(5m) | summarize count()'
           timeAggregation: 'Count'
           operator: 'LessThan'
           threshold: 1

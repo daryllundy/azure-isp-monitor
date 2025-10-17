@@ -91,15 +91,29 @@ fi
 
 echo "Package size: $(du -h function.zip | cut -f1)"
 
-# Deploy function code
-az functionapp deployment source config-zip \
+# Deploy function code using OneDeploy API
+# Get publishing credentials
+CREDS=$(az functionapp deployment list-publishing-credentials \
   --resource-group "$RG" \
   --name "$FUNC_APP_NAME" \
-  --src function.zip \
-  --build-remote true
+  --query "{username:publishingUserName, password:publishingPassword}" \
+  --output json)
 
-if [ $? -ne 0 ]; then
-  echo "Error: Function code deployment failed."
+USERNAME=$(echo "$CREDS" | jq -r '.username')
+PASSWORD=$(echo "$CREDS" | jq -r '.password')
+
+# Deploy using OneDeploy API (newer recommended method)
+HTTP_STATUS=$(curl -X POST \
+  -u "$USERNAME:$PASSWORD" \
+  -H "Content-Type: application/zip" \
+  --data-binary @function.zip \
+  -w "%{http_code}" \
+  -o /dev/null \
+  -s \
+  https://$FUNC_APP_NAME.scm.azurewebsites.net/api/publish?type=zip)
+
+if [ "$HTTP_STATUS" != "200" ] && [ "$HTTP_STATUS" != "202" ]; then
+  echo "Error: Function code deployment failed with HTTP status $HTTP_STATUS"
   rm -f function.zip
   exit 1
 fi
