@@ -31,6 +31,7 @@ import argparse
 import json
 import os
 import socket
+import ssl
 import sys
 import time
 from datetime import datetime
@@ -80,7 +81,10 @@ def send_ping(url, device_name, note='', verbose=False):
             print(f"  Device: {device_name}")
             print(f"  Note: {note}")
 
-        with urlopen(req, timeout=10) as response:
+        # Create SSL context that uses system certificates
+        ssl_context = ssl.create_default_context()
+
+        with urlopen(req, timeout=10, context=ssl_context) as response:
             response_data = response.read().decode('utf-8')
             status_code = response.status
 
