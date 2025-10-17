@@ -77,6 +77,47 @@ if [ -z "$FUNC_APP_NAME" ]; then
   FUNC_APP_URL="https://${FUNC_APP_NAME}.azurewebsites.net/api/ping"
 fi
 
+# Verify alert configuration
+echo "Verifying alert configuration..."
+ALERT_CONFIG=$(az monitor scheduled-query show \
+  --name "${PREFIX}-heartbeat-miss" \
+  --resource-group "$RG" \
+  --query "{muteActions:muteActionsDuration, autoMitigate:autoMitigate}" \
+  --output json 2>/dev/null)
+
+if [ $? -eq 0 ]; then
+  MUTE_DURATION=$(echo "$ALERT_CONFIG" | jq -r '.muteActions')
+  AUTO_MITIGATE=$(echo "$ALERT_CONFIG" | jq -r '.autoMitigate')
+
+  if [ "$MUTE_DURATION" = "PT0M" ] && [ "$AUTO_MITIGATE" = "true" ]; then
+    echo "✓ Alert configuration verified"
+    echo "  - Mute Actions Duration: $MUTE_DURATION (continuous notifications enabled)"
+    echo "  - Auto Mitigate: $AUTO_MITIGATE (automatic resolution enabled)"
+  else
+    echo "⚠ Alert configuration mismatch:"
+    echo "  - Mute Actions Duration: $MUTE_DURATION (expected: PT0M)"
+    echo "  - Auto Mitigate: $AUTO_MITIGATE (expected: true)"
+  fi
+else
+  echo "⚠ Could not verify alert configuration. Alert rule may still be deploying."
+fi
+echo ""
+
+# Display action group configuration
+echo "Action Group Configuration:"
+ACTION_GROUP_CONFIG=$(az monitor action-group show \
+  --name "${PREFIX}-ag" \
+  --resource-group "$RG" \
+  --query "{Name:name, Enabled:enabled, Email:emailReceivers[0].emailAddress, Status:emailReceivers[0].status}" \
+  --output table 2>/dev/null)
+
+if [ $? -eq 0 ]; then
+  echo "$ACTION_GROUP_CONFIG"
+else
+  echo "⚠ Could not retrieve action group configuration."
+fi
+echo ""
+
 echo "[3/3] Deploying function app code..."
 echo "Building and deploying to $FUNC_APP_NAME..."
 
@@ -143,6 +184,25 @@ echo "=========================================="
 echo "Function App: $FUNC_APP_NAME"
 echo "Function URL: $FUNC_APP_URL"
 echo ""
+echo "Alert Configuration:"
+echo "  - Evaluation Frequency: Every 5 minutes"
+echo "  - Notification Frequency: Every 5 minutes during outages"
+echo "  - Auto-Resolution: Enabled (resolves when connectivity restored)"
+echo ""
 echo "Test your deployment:"
 echo "  curl $FUNC_APP_URL"
+echo ""
+echo "Test alert notifications:"
+echo "  1. Stop heartbeat: ./stop_heartbeat.sh"
+echo "  2. Wait 6-7 minutes for alert to fire"
+echo "  3. Check email (including spam folder)"
+echo "  4. Resume heartbeat: ./start_heartbeat.sh"
+echo "  5. Wait 6-7 minutes for resolution email"
+echo ""
+echo "Manually verify alert settings:"
+echo "  az monitor scheduled-query show \\"
+echo "    --name ${PREFIX}-heartbeat-miss \\"
+echo "    --resource-group $RG \\"
+echo "    --query \"{mute:muteActionsDuration, auto:autoMitigate}\" \\"
+echo "    --output table"
 echo "=========================================="
