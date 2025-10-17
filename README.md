@@ -162,11 +162,11 @@ HEARTBEAT_INTERVAL=60
 
 ### Alert Settings (main.bicep)
 
-- **Evaluation Frequency**: 5 minutes (line 88)
-- **Window Size**: 5 minutes (line 89)
-- **Query**: Looks for POST/GET requests to `/api/ping` (lines 93-97)
-- **Threshold**: Alert if count < 1 (line 100)
-- **Severity**: 2 - Warning (line 87)
+- **Evaluation Frequency**: 5 minutes (line 143)
+- **Window Size**: 5 minutes (line 144)
+- **Query**: Looks for "Ping" function requests in last 5 minutes (line 148)
+- **Threshold**: Alert if count < 1 (line 150)
+- **Severity**: 2 - Warning (line 142)
 
 ## API Endpoint
 
@@ -225,12 +225,20 @@ az deployment group create \
   -f main.bicep \
   -p prefix=$PREFIX alertEmail=$ALERT_EMAIL
 
-# Deploy function code only
-az functionapp deployment source config-zip \
+# Deploy function code only (manual deployment)
+# Get credentials first
+CREDS=$(az functionapp deployment list-publishing-credentials \
   --resource-group $RG \
   --name $FUNC_APP_NAME \
-  --src function.zip \
-  --build-remote true
+  --query "{username:publishingUserName, password:publishingPassword}" \
+  --output json)
+
+# Then deploy using OneDeploy API
+curl -X POST \
+  -u "$(echo $CREDS | jq -r '.username'):$(echo $CREDS | jq -r '.password')" \
+  -H "Content-Type: application/zip" \
+  --data-binary @function.zip \
+  https://$FUNC_APP_NAME.scm.azurewebsites.net/api/publish?type=zip
 
 # View logs
 az webapp log tail --name $FUNC_APP_NAME --resource-group $RG
@@ -271,8 +279,9 @@ az monitor scheduled-query list \
 ### No alerts received
 - Verify alert email in Action Group: Check Azure Portal > Monitor > Alerts > Action Groups
 - Check alert rule is enabled: `az monitor scheduled-query list --resource-group $RG`
+- Verify alert query syntax: The query looks for `name == "Ping"` in Application Insights requests
 - Confirm emails aren't in spam folder
-- Test with manual alert: Azure Portal > Monitor > Alerts > Create > Alert rule
+- Test alert query manually: `az monitor app-insights query --app <app-name> --resource-group $RG --analytics-query "requests | where name == 'Ping' | where timestamp > ago(1h) | summarize count()"`
 
 ### Agent connection failures
 - Verify function URL is correct: `curl https://your-func.azurewebsites.net/api/ping`
@@ -291,6 +300,12 @@ az monitor scheduled-query list \
 - Check if session already exists: `tmux ls`
 - View agent logs: `tmux capture-pane -pt isp-monitor -S -50`
 - Kill stuck session: `tmux kill-session -t isp-monitor`
+
+### Deployment failures
+- **Error**: "The Azure CLI does not support this deployment path"
+- **Solution**: The deploy.sh script now uses the OneDeploy API (`/api/publish?type=zip`) which is the current recommended method
+- If deployment fails, check function app logs: `az webapp log tail --name $FUNC_APP_NAME --resource-group $RG`
+- Ensure storage account connection is working (the script uses standard connection strings)
 
 ## Cost Estimate
 
