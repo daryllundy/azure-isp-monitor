@@ -192,6 +192,46 @@ fi
 
 echo ""
 echo "=========================================="
+echo "Alert History"
+echo "=========================================="
+echo ""
+
+# Query recent alert activity
+echo "Querying recent alert activity (last 24 hours)..."
+echo ""
+
+ALERT_HISTORY=$(az monitor activity-log list \
+    --resource-group "$RG" \
+    --start-time "$(date -u -v-24H '+%Y-%m-%dT%H:%M:%SZ' 2>/dev/null || date -u -d '24 hours ago' '+%Y-%m-%dT%H:%M:%SZ')" \
+    --query "[?contains(resourceId, 'scheduledQueryRules') && contains(resourceId, '$ALERT_NAME')].{Time:eventTimestamp, Status:status.value, Operation:operationName.localizedValue, State:properties.eventCategory}" \
+    --output json 2>/dev/null)
+
+if [ $? -eq 0 ] && [ "$(echo "$ALERT_HISTORY" | jq '. | length')" -gt 0 ]; then
+    echo "Recent Alert Events:"
+    echo "$ALERT_HISTORY" | jq -r '.[] | "  [\(.Time)] \(.Operation) - \(.Status)"'
+    echo ""
+    
+    FIRED_COUNT=$(echo "$ALERT_HISTORY" | jq '[.[] | select(.Operation | contains("Fired") or contains("Activated"))] | length')
+    RESOLVED_COUNT=$(echo "$ALERT_HISTORY" | jq '[.[] | select(.Operation | contains("Resolved") or contains("Deactivated"))] | length')
+    
+    echo "Summary:"
+    echo "  Alert Fired Events: $FIRED_COUNT"
+    echo "  Alert Resolved Events: $RESOLVED_COUNT"
+    
+    if [ "$FIRED_COUNT" -gt 0 ]; then
+        print_success "Alert has fired at least once (system is working)"
+    fi
+else
+    echo "No recent alert activity found in the last 24 hours"
+    echo ""
+    echo "This is normal if:"
+    echo "  • The system was just deployed"
+    echo "  • No connectivity issues have occurred"
+    echo "  • The heartbeat agent has been running continuously"
+fi
+
+echo ""
+echo "=========================================="
 echo "Validation Summary"
 echo "=========================================="
 echo ""
