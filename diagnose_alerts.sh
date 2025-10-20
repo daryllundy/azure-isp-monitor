@@ -90,7 +90,16 @@ ALERT_CONFIG=$(az monitor scheduled-query show \
     --resource-group "$RG" \
     --output json 2>/dev/null)
 
-if [ $? -eq 0 ]; then
+if [ $? -eq 0 ] && [ -n "$ALERT_CONFIG" ]; then
+    # Validate that we got valid JSON
+    if ! echo "$ALERT_CONFIG" | jq empty 2>/dev/null; then
+        echo -e "${RED}✗ Alert rule found but returned invalid JSON${NC}"
+        echo -e "${YELLOW}Raw output (first 500 chars):${NC}"
+        echo "$ALERT_CONFIG" | head -c 500
+        echo ""
+        exit 1
+    fi
+
     echo -e "${GREEN}✓ Alert rule found${NC}"
 
     # Extract key configuration
